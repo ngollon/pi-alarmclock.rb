@@ -5,8 +5,8 @@ require_relative 'daemon.rb'
 
 abort "Usage alarmclock.rb <start|stop>" unless ARGV.count == 1 and (ARGV[0] == 'start' || ARGV[0] == 'stop')
 
-daemon = Alarmclock::Daemon.new(Alarmclock::Config)
-Alarmclock::Logging.configure(Alarmclock::Config.logfile, Alarmclock::Config.loglevel)
+daemon = PiAlarmclock::Daemon.new(PiAlarmclock::Config)
+PiAlarmclock::Logging.configure(PiAlarmclock::Config.logfile, PiAlarmclock::Config.loglevel)
 
 if ARGV[0] == 'start'
   daemon.start
