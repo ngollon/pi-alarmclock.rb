@@ -3,8 +3,8 @@ require 'logger'
 module PiAlarmclock
   module Config
     @values = {      
-      :alarm_time   => (5 * 60 + 45) * 60,						# Seconds after midnight... for now
-      :sunrise_duration => 30 * 60,                             # Seconds
+      :alarm_time   => (6 * 60 + 15) * 60,						# Seconds after midnight... for now
+      :sunrise_duration => 30 * 60,                             # Seconds	  
       :pidfile             => '/var/run/alarmclock/alarmclock.pid',
       :logfile             => '/var/log/alarmclock/alarmclock.log',
       :loglevel            => Logger::INFO,

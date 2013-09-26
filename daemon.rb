@@ -1,8 +1,11 @@
 require_relative 'logging.rb'
+require_relative 'switch.rb'
 
 module PiAlarmclock
   class Daemon
     include Logging
+
+	MIN_HOLD_TIME = 0.5
 
     def initialize(config)
       @config = config
@@ -16,25 +19,46 @@ module PiAlarmclock
       logger.info("Sunrise Duration: #{@config.greylist_directory}")
 
 	  # Prepare GPIO using the wiringPi binary
-      # ...	  
-
-	  # Configure switch IO ports for use as edge triggered interrupts
-	  File.open("/sys/class/gpio/gpio17/edge", "w") { |f| f.write("both") }
-	  File.open("/sys/class/gpio/gpio21/edge", "w") { |f| f.write("both") }
-	  File.open("/sys/class/gpio/gpio22/edge", "w") { |f| f.write("both") }
-	
+      `gpio export 18 out`
+	  `gpio pwmr #{2 ** 14}`
+	  `gpio -g mode 18 pw`
+	  	    
       Process.daemon
       File.open(@config.pidfile, 'w') { |file| file.write(Process.pid) }
     
       logger.info("Process ID: #{Process.pid}")
 
-      Thread.new( monitor_lightswitch() )
-	  Thread.new( monitor_alarmswitch() )
-	  Thread.new( monitor_clockswitch() )
+	  @light_switch = Switch.new(17)
+	  @alarm_switch = Switch.new(21)
+	  @clock_switch = Switch.new(22)
 
-	  loop do
-		# Check for alarm time, and call sunrise if needed
+	  @light_on = @light_switch.on
+
+	  @light_switch.changed do
+	    @sunrise_thread.terminate unless @sunrise_thread.nil?
+		update_light		
 	  end
+	  
+	  @alarm_switch.on do
+	    @alarm_thread = Thread.new ( run_alarm() )
+		update_clock
+	  end
+
+	  @alarm_switch.off do
+	    @alarm_thread.terminate
+	    update_clock		
+	  end
+	  
+	  @clock_switch.on do 
+		@clock_thread = Thread.new( run_clock() )
+	  end
+
+	  @clock_switch.off do
+		update_clock()
+		@clock_thread.terminate
+	  end
+
+	  sleep  
     end
 
     def stop
@@ -47,46 +71,39 @@ module PiAlarmclock
       rescue Exception => msg
         logger.error("Process probably not running, message: #{msg}")
       end     
-    end
-
-	def monitor_lightswitch
-	  gpio17 = File.open("/sys/class/gpio/gpio17/value", "r")
-      loop do
-		value = read(gpio17)		
-	  end
-	end
-
-	def monitor_alarmswitch
-	  gpio21 = File.open("/sys/class/gpio/gpio21/value", "r")
-      loop do
-		value = read(gpio21)		
-	  end
-	end
-
-	def monitor_clockswitch
-	  gpio22 = File.open("/sys/class/gpio/gpio22/value", "r")
-      loop do
-		value = read(gpio22)		
-	  end
-	end
-
-	def read (file)
-	  loop dp 
-	    rs,ws,es = IO.select(nil, nil, [file])
-	    if es
-	    	r = es[0]
-	    	return r.read(1)
-	    else
-	    	puts "timeout"
-	    end
-	  end
+    end	
+	
+	def update_light
+	  val = 0
+	  val = 2 ** 14 if @light_switch.on 
+	  `gpio -g pwm 18 #{val}`
 	end
 
 	def update_clock
-	   loop do
-		 # Get current time and send to display via I2C
-		 sleep(10)
-	   end
+	  # Show current time
+	  # Show a dot if alarm is set
+	end
+
+	def run_clock
+	  loop do		
+		update_clock
+		sleep(10)
+      end
+	end
+
+    def run_alarm
+	  loop do
+	    # Calculate the next alarm time
+	    today = Date.now
+	    alarm_time = Time.new(today.year, today.month, today.day) + @config.alarm_time - @config.sunrise_duration
+	    if Timw.now > alarm_time then
+	      tomorrow = today.next_dat 
+	      alarm_time = Time.new(tomorrow.year, tomorrow.month, tomorrow.day) + @config.alarm_time - @config.sunrise_duration
+	    end
+	    sleep(alarm_time - Time.now)
+	    @sunrise_thread = Thread.new( sunrise() )
+	    sleep(1)
+	  end
 	end
 
 	def sunrise
@@ -95,8 +112,8 @@ module PiAlarmclock
 	  while (runtime < @config.sunrise_duration) do
 	    runtime = Time.now - start_time
 		fraction = runtime / @config.sunrise_duration
-		pwm = (2 ** (14 * fraction)).to_i
-		# Set PWM for GPIO 18 to pwm
+		pwm = (2 ** (14 * fraction)).to_i + 1
+		`gpio -g pwm 18 #{pwm}`
 	  end 
 	end
   end    
