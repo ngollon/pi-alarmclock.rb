@@ -35,26 +35,31 @@ module PiAlarmclock
 	  @light_on = @light_switch.on
 
 	  @light_switch.changed do
+	    logger.debug("Light switch changed to #{@light_switch.on ? "on" : "off"}")
 	    @sunrise_thread.terminate unless @sunrise_thread.nil?
 		update_light		
 	  end
 	  
 	  @alarm_switch.on do
+	    logger.debug("Alarm switch changed to #{@alarm_switch.on ? "on" : "off"}")	    
 	    @alarm_thread = Thread.new ( run_alarm() )
 		update_clock
 	  end
 
 	  @alarm_switch.off do
+	    logger.debug("Alarm switch changed to #{@alarm_switch.on ? "on" : "off"}")	    
 	    @alarm_thread.terminate
 	    update_clock		
 	  end
 	  
 	  @clock_switch.on do 
-		@clock_thread = Thread.new( run_clock() )
+		logger.debug("Clock switch changed to #{@clock_switch.on ? "on" : "off"}")	    
+	    @clock_thread = Thread.new( run_clock() )
 	  end
 
 	  @clock_switch.off do
-		update_clock()
+		logger.debug("Clock switch changed to #{@clock_switch.on ? "on" : "off"}")	    
+	    update_clock()
 		@clock_thread.terminate
 	  end
 
@@ -92,6 +97,8 @@ module PiAlarmclock
 	end
 
     def run_alarm
+	  logger.info("Alarm thread started.")	    
+	    
 	  loop do
 	    # Calculate the next alarm time
 	    today = Date.now
@@ -100,6 +107,7 @@ module PiAlarmclock
 	      tomorrow = today.next_dat 
 	      alarm_time = Time.new(tomorrow.year, tomorrow.month, tomorrow.day) + @config.alarm_time - @config.sunrise_duration
 	    end
+		logger.info("Next alarm in #{alarm_time - Time.now} seconds at #{Time.at(alarm_time)}.")    	  
 	    sleep(alarm_time - Time.now)
 	    @sunrise_thread = Thread.new( sunrise() )
 	    sleep(1)
@@ -108,13 +116,16 @@ module PiAlarmclock
 
 	def sunrise
 	  start_time = Time.now
+	  logger.info("Sunrise started.")
 	  runtime = 0
 	  while (runtime < @config.sunrise_duration) do
 	    runtime = Time.now - start_time
 		fraction = runtime / @config.sunrise_duration
 		pwm = (2 ** (14 * fraction)).to_i + 1
 		`gpio -g pwm 18 #{pwm}`
-	  end 
+		sleep(0.1)
+	  end
+	  logger.info("Sunrise complete.")
 	end
   end    
 end
