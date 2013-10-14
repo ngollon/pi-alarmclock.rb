@@ -1,3 +1,4 @@
+require 'date'
 require './logging.rb'
 require './switch.rb'
 require './clock.rb'
@@ -88,6 +89,7 @@ module PiAlarmclock
     end
 
     def update_clock
+      return if @override_clock 
       # Show current time
       # Show a dot if alarm is set
       if @clock_switch.on? then 
@@ -100,26 +102,38 @@ module PiAlarmclock
     def run_clock
       loop do        
         update_clock
-        sleep(10)
+        sleep(1)
       end
     end
 
     def run_alarm
       logger.info("Alarm thread started.")        
-        
+      @override_clock = true
+      clock.set_time(Time.new(2100, 1, 1, @config.alarm_time[:hour], @config.alarm_time[:min]), true)
+      sleep(2)
+      @override_clock = false
+      update_clock
+
       loop do
         # Calculate the next alarm time
-        today = Time.now
-        alarm_time = Time.new(today.year, today.month, today.day) + @config.alarm_time - @config.sunrise_duration
-        if Time.now > alarm_time then
-          tomorrow = today.next_day 
-          alarm_time = Time.new(tomorrow.year, tomorrow.month, tomorrow.day) + @config.alarm_time - @config.sunrise_duration
-        end
-        logger.info("Next alarm in #{alarm_time - Time.now} seconds at #{Time.at(alarm_time)}.")          
-        sleep(alarm_time - Time.now)
-        @sunrise_thread = Thread.new { sunrise() }
-        sleep(1)
+        alarm_time = next_alarm
+        seconds_to_alarm = (alarm_time - now) * 24 * 60 * 60;
+        logger.info("Next alarm in #{seconds_to_alarm} seconds at #{alarm_time}.")          
+        sleep(seconds_to_alarm)
+        @sunrise_thread = Thread.new( sunrise() )
+        sleep(10)
       end
+    end
+
+    def next_alarm
+      now = DateTime.now
+      alarm = alarm_at_day(now)
+      alarm = alarm_at_day(now.next_day) if alarm < now
+      alarm
+    end
+
+    def alarm_at_day(day)
+      DateTime.new(day.year, day.month, day.day, @config.alarm_time[:hour], @config.alarm_time[:min])
     end
 
     def sunrise
