@@ -17,15 +17,14 @@ module PiAlarmclock
       abort "Daemon already running. Check the pidfile at #{@config.pidfile}" if File.exists?(@config.pidfile)
       
       logger.info("Initializing Pi-Alarmclock.rb, version 0.1")
-      logger.info("Alarm Time: #{@config.alarm_time}")
+      logger.info("Alarm Time: #{@config.alarm_time[:hour]}:#{@config.alarm_time[:min]}")
       logger.info("Sunrise Duration: #{@config.sunrise_duration}")
 
       # Prepare GPIO using the wiringPi binary
       `gpio export 18 out`
       `gpio pwmr #{2 ** 14}`
       `gpio -g mode 18 pwm`
-              
-      Process.daemon
+#      Process.daemon
       File.open(@config.pidfile, 'w') { |file| file.write(Process.pid) }
     
       logger.info("Process ID: #{Process.pid}")
@@ -61,10 +60,10 @@ module PiAlarmclock
         logger.debug("Clock switch changed to #{@clock_switch.on? ? "on" : "off"}")        
         if @clock_switch.on? then
           @clock_thread = Thread.new { run_clock() }
-        else
-          update_clock()
+        else       
           @clock_thread.terminate unless @clock_thread.nil?
-        end 
+          update_clock()
+        end
       end
       
       sleep  
@@ -89,7 +88,10 @@ module PiAlarmclock
     end
 
     def update_clock
-      return if @override_clock 
+      if @override_clock
+	@override_clock = false
+        return
+      end
       # Show current time
       # Show a dot if alarm is set
       if @clock_switch.on? then 
@@ -102,26 +104,27 @@ module PiAlarmclock
     def run_clock
       loop do        
         update_clock
-        sleep(1)
+        sleep(10)
       end
     end
 
     def run_alarm
       logger.info("Alarm thread started.")        
       @override_clock = true
-      clock.set_time(Time.new(2100, 1, 1, @config.alarm_time[:hour], @config.alarm_time[:min]), true)
+      @clock.set_time(Time.new(2000, 1, 1, @config.alarm_time[:hour], @config.alarm_time[:min]), true)
       sleep(2)
       @override_clock = false
       update_clock
-
-      loop do
+      
+     loop do
         # Calculate the next alarm time
         alarm_time = next_alarm
-        seconds_to_alarm = (alarm_time - now) * 24 * 60 * 60;
+        seconds_to_alarm = (alarm_time - DateTime.now).to_f * 24 * 60 * 60 - @config.sunrise_duration;
         logger.info("Next alarm in #{seconds_to_alarm} seconds at #{alarm_time}.")          
         sleep(seconds_to_alarm)
-        @sunrise_thread = Thread.new( sunrise() )
-        sleep(10)
+	logger.debug("Gogo")
+        @sunrise_thread = Thread.new{ sunrise() }
+        sleep(120)
       end
     end
 
@@ -133,7 +136,7 @@ module PiAlarmclock
     end
 
     def alarm_at_day(day)
-      DateTime.new(day.year, day.month, day.day, @config.alarm_time[:hour], @config.alarm_time[:min])
+      DateTime.new(day.year, day.month, day.day, @config.alarm_time[:hour], @config.alarm_time[:min], 0, day.offset)
     end
 
     def sunrise
