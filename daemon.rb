@@ -86,6 +86,7 @@ module PiAlarmclock
     end
 
     def update_clock
+      return if @override_clock 
       # Show current time
       # Show a dot if alarm is set
     end
@@ -93,13 +94,18 @@ module PiAlarmclock
     def run_clock
       loop do        
         update_clock
-        sleep(10)
+        sleep(1)
       end
     end
 
     def run_alarm
       logger.info("Alarm thread started.")        
-        
+      @override_clock = true
+      clock.set_time(Time.new(2100, 1, 1, @config.alarm_time[:hour], @config.alarm_time[:min]), true)
+      sleep(2)
+      @override_clock = false
+      update_clock
+
       loop do
         # Calculate the next alarm time
         alarm_time = next_alarm
