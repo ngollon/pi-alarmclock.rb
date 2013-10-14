@@ -1,31 +1,24 @@
-require_relative 'logging.rb'
-
 module PiAlarmclock
   class Switch
-    include Logging
 
     MIN_HOLD_TIME = 0.5
 
     def initialize(port)
       @port = port
 
-      logger.debug("Exporting GPIO pin #{port}")
       File.open("/sys/class/gpio/export", "w") { |f| f.write("#{@port}") }
-      logger.debug("Settings GPIO pin #{port} direction to IN")
       File.open("/sys/class/gpio/gpio#{@port}/direction", "w") { |f| f.write("in") }
-      logger.debug("Configuring GPIO pin #{port} for edge triggers")
       File.open("/sys/class/gpio/gpio#{@port}/edge", "w") { |f| f.write("both") }      
 
       @high_time = Time.now
       @on_before = false
-      File.open("/sys/class/gpio/gpio#{@port}/value", "r") { |f| @on = (f.read(1) == 1) }
-      logger.info("GPIO pin #{port} initial state: #{@on}")
+      File.open("/sys/class/gpio/gpio#{@port}/value", "r") { |f| @on = (f.read(1) == '1') }
 
       @on_handlers = []
       @off_handlers = []
       @changed_handlers = []
 
-      Thread.new() { monitor }
+      @monitor_thread = Thread.new { monitor }
     end
 
     def set_on
@@ -44,6 +37,10 @@ module PiAlarmclock
       @override = true
       @off_handlers.each { |h| h.call }
       @changed_handlers.each { |h| h.call }
+    end
+
+    def on?
+      @on
     end
 
     def on(method=nil, &block)        
@@ -78,15 +75,14 @@ module PiAlarmclock
     end
 
     def monitor
-      logger.info("Monitoring of GPIO pin #{@port} started")
       pin = File.open("/sys/class/gpio/gpio#{@port}/value", "r")
       loop do
         value = read_debounced(pin)
-        if value == 1 then
+        if value == '1' then
           # clock switch is on, so show the clock and remember this time
           @high_time = Time.now
           @on_before = @on
-          @on = true          
+          @on = true
           @on_handlers.each { |h| h.call }
           @changed_handlers.each { |h| h.call }
         else
@@ -100,21 +96,18 @@ module PiAlarmclock
       end
     end    
 
-    def read_debounced (file)
-      currentValue = file.read(1)
+    def read_debounced (pin)      
+      current_value = pin.read(1)
+      pin.rewind
       loop do
-        rs, ws, es = IO.select(nil, nil, [file])
-        sleep(0.05)
-        if es
-            r = es[0]
-            newValue = r.read(1)
-            if newValue != currentValue or @override then
-              @override = false
-              return newValue
-            end  
-        else
-            puts "timeout"
-        end
+        rs, ws, es = IO.select(nil, nil, [pin])
+        sleep(0.1)
+        new_value = pin.read(1)
+        pin.rewind
+        if new_value != current_value or @override then
+          @override = false
+          return new_value
+        end  
       end
     end
   end    

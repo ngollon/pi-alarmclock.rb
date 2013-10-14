@@ -1,5 +1,6 @@
-require_relative 'logging.rb'
-require_relative 'switch.rb'
+require './logging.rb'
+require './switch.rb'
+require './clock.rb'
 
 module PiAlarmclock
   class Daemon
@@ -29,38 +30,40 @@ module PiAlarmclock
       logger.info("Process ID: #{Process.pid}")
 
       @light_switch = Switch.new(17)
-      @alarm_switch = Switch.new(21)
+      @alarm_switch = Switch.new(27)
       @clock_switch = Switch.new(22)
+
+      @clock = PiAlarmclock::Clock.new
+      @clock.clear
 
       @light_on = @light_switch.on
 
       @light_switch.changed do
-        logger.debug("Light switch changed to #{@light_switch.on ? "on" : "off"}")
+        logger.debug("Light switch changed to #{@light_switch.on? ? "on" : "off"}")
         @sunrise_thread.terminate unless @sunrise_thread.nil?
         update_light        
       end
   
       @alarm_switch.on do
-        logger.debug("Alarm switch changed to #{@alarm_switch.on ? "on" : "off"}")        
-        @alarm_thread = Thread.new ( run_alarm() )
+        logger.debug("Alarm switch changed to #{@alarm_switch.on? ? "on" : "off"}")        
+        @alarm_thread = Thread.new { run_alarm() }
         update_clock
       end
 
       @alarm_switch.off do
-        logger.debug("Alarm switch changed to #{@alarm_switch.on ? "on" : "off"}")        
+        logger.debug("Alarm switch changed to #{@alarm_switch.on? ? "on" : "off"}")        
         @alarm_thread.terminate unless @alarm_thread.nil?
         update_clock        
       end
-      
-      @clock_switch.on do 
-        logger.debug("Clock switch changed to #{@clock_switch.on ? "on" : "off"}")        
-        @clock_thread = Thread.new( run_clock() )
-      end
 
-      @clock_switch.off do
-        logger.debug("Clock switch changed to #{@clock_switch.on ? "on" : "off"}")        
-        update_clock()
-        @clock_thread.terminate unless @clock_thread.nil?
+      @clock_switch.changed do
+        logger.debug("Clock switch changed to #{@clock_switch.on? ? "on" : "off"}")        
+        if @clock_switch.on? then
+          @clock_thread = Thread.new { run_clock() }
+        else
+          update_clock()
+          @clock_thread.terminate unless @clock_thread.nil?
+        end 
       end
       
       sleep  
@@ -80,13 +83,18 @@ module PiAlarmclock
     
     def update_light
       val = 0
-      val = 2 ** 14 if @light_switch.on 
+      val = 2 ** 14 if @light_switch.on?
       `gpio -g pwm 18 #{val}`
     end
 
     def update_clock
       # Show current time
       # Show a dot if alarm is set
+      if @clock_switch.on? then 
+        @clock.set_time(Time.now, @alarm_switch.on?)
+      else
+        @clock.set_time(nil, @alarm_switch.on?)
+      end
     end
 
     def run_clock
@@ -101,15 +109,15 @@ module PiAlarmclock
         
       loop do
         # Calculate the next alarm time
-        today = Date.now
+        today = Time.now
         alarm_time = Time.new(today.year, today.month, today.day) + @config.alarm_time - @config.sunrise_duration
-        if Timw.now > alarm_time then
-          tomorrow = today.next_dat 
+        if Time.now > alarm_time then
+          tomorrow = today.next_day 
           alarm_time = Time.new(tomorrow.year, tomorrow.month, tomorrow.day) + @config.alarm_time - @config.sunrise_duration
         end
         logger.info("Next alarm in #{alarm_time - Time.now} seconds at #{Time.at(alarm_time)}.")          
         sleep(alarm_time - Time.now)
-        @sunrise_thread = Thread.new( sunrise() )
+        @sunrise_thread = Thread.new { sunrise() }
         sleep(1)
       end
     end
