@@ -24,7 +24,8 @@ module PiAlarmclock
       `gpio export 18 out`
       `gpio pwmr #{2 ** 14}`
       `gpio -g mode 18 pwm`
-#      Process.daemon
+
+      Process.daemon
       File.open(@config.pidfile, 'w') { |file| file.write(Process.pid) }
     
       logger.info("Process ID: #{Process.pid}")
@@ -35,6 +36,7 @@ module PiAlarmclock
 
       @clock = PiAlarmclock::Clock.new
       @clock.clear
+      @clock.set_brightness(1)
 
       @light_on = @light_switch.on
 
@@ -116,21 +118,21 @@ module PiAlarmclock
       @override_clock = false
       update_clock
       
-     loop do
+      loop do
         # Calculate the next alarm time
         alarm_time = next_alarm
         seconds_to_alarm = (alarm_time - DateTime.now).to_f * 24 * 60 * 60 - @config.sunrise_duration;
         logger.info("Next alarm in #{seconds_to_alarm} seconds at #{alarm_time}.")          
         sleep(seconds_to_alarm)
-	logger.debug("Gogo")
         @sunrise_thread = Thread.new{ sunrise() }
-        sleep(120)
+        sleep(@config.sunrise_duration + 10)
       end
     end
 
     def next_alarm
       now = DateTime.now
       alarm = alarm_at_day(now)
+      logger.debug("#{now}, #{alarm}, #{alarm < now}")
       alarm = alarm_at_day(now.next_day) if alarm < now
       alarm
     end
